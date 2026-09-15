@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TDA I · Capturador de devolución oral</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f7fa;color:#1f2937}
+.top{background:#17365d;color:#fff;padding:18px 24px;font-size:22px;font-weight:700}
+.wrap{max-width:850px;margin:32px auto;padding:0 18px}
+.card{background:#fff;border:1px solid #d8dee8;border-radius:14px;padding:24px;box-shadow:0 4px 18px rgba(0,0,0,.05)}
+h2{margin-top:0}.muted{color:#64748b}.status{margin:18px 0;padding:12px;border-radius:9px;background:#eef2f7;font-weight:700}
+.status.on{background:#fee2e2;color:#991b1b}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+button{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:12px 16px;font-weight:700;cursor:pointer}
+button.primary{background:#b42318;color:#fff;border-color:#b42318}
+button:disabled{opacity:.45;cursor:not-allowed}
+textarea{width:100%;box-sizing:border-box;min-height:220px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font:inherit;line-height:1.5;resize:vertical}
+.detail{font-size:13px;color:#64748b;margin-top:10px;line-height:1.5}
+.ok{color:#166534}.bad{color:#991b1b}
+</style>
+</head>
+<body>
+<div class="top">TDA I · Devolución oral</div>
+<div class="wrap">
+  <div class="card">
+    <h2>🎙 Capturador de voz</h2>
+    <p class="muted">Prueba independiente del sistema de rúbricas. Esta página verifica el micrófono y transcribe la devolución en español.</p>
+    <div id="status" class="status">Micrófono detenido</div>
+    <div class="controls">
+      <button id="start" class="primary">🎙 Iniciar</button>
+      <button id="pause" disabled>⏸ Pausar</button>
+      <button id="finish" disabled>⏹ Finalizar</button>
+      <button id="clear">Limpiar texto</button>
+    </div>
+    <textarea id="text" placeholder="La transcripción aparecerá aquí..."></textarea>
+    <div id="interim" class="detail"></div>
+    <div id="diag" class="detail">Esperando prueba…</div>
+  </div>
+</div>
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,active=false,paused=false,finalText='';
+const $=id=>document.getElementById(id);
+
+function diag(msg,good=false){
+ $('diag').className='detail '+(good?'ok':'bad');
+ $('diag').textContent=msg;
+}
+function ui(){
+ $('status').textContent=active?'● Escuchando…':paused?'Grabación pausada':'Micrófono detenido';
+ $('status').className='status'+(active?' on':'');
+ $('pause').textContent=active?'⏸ Pausar':'▶ Continuar';
+ $('pause').disabled=!rec;
+ $('finish').disabled=!rec;
+ $('start').disabled=active||paused;
+}
+async function validateMic(){
+ if(!window.isSecureContext) throw new Error('La página no está en un contexto HTTPS seguro.');
+ if(!navigator.mediaDevices?.getUserMedia) throw new Error('getUserMedia no está disponible.');
+ const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+ stream.getTracks().forEach(t=>t.stop());
+}
+function buildRecognition(){
+ if(!SR) throw new Error('Web Speech no está disponible en este navegador. Usá Chrome actualizado.');
+ rec=new SR();
+ rec.lang='es-AR'; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
+ rec.onstart=()=>{active=true;paused=false;diag('Micrófono autorizado ✓ · Web Speech disponible ✓ · Reconocimiento iniciado ✓',true);ui()};
+ rec.onresult=e=>{
+   let interim='';
+   for(let i=e.resultIndex;i<e.results.length;i++){
+     const t=e.results[i][0].transcript;
+     if(e.results[i].isFinal) finalText+=(finalText&&!finalText.endsWith(' ')?' ':'')+t.trim();
+     else interim+=t;
+   }
+   $('text').value=finalText;
+   $('interim').textContent=interim?'Escuchando: '+interim:'';
+ };
+ rec.onerror=e=>{active=false;paused=false;diag('Error de reconocimiento: '+e.error);ui()};
+ rec.onend=()=>{active=false;ui()};
+}
+$('start').onclick=async()=>{
+ try{
+   await validateMic();
+   if(!rec)buildRecognition();
+   finalText=$('text').value.trim();
+   paused=false;
+   rec.start();
+ }catch(e){diag((e.name?e.name+': ':'')+(e.message||e));}
+};
+$('pause').onclick=()=>{
+ if(!rec)return;
+ if(active){paused=true;rec.stop();}
+ else{paused=false;try{rec.start()}catch(e){diag(e.message)}}
+ ui();
+};
+$('finish').onclick=()=>{
+ paused=false;
+ if(rec&&active)rec.stop();
+ active=false;
+ $('interim').textContent='';
+ diag('Devolución finalizada. El texto puede revisarse y editarse.',true);
+ ui();
+};
+$('clear').onclick=()=>{finalText='';$('text').value='';$('interim').textContent='';};
+if(!SR)diag('Web Speech no está disponible en este navegador.');
+else diag('Web Speech disponible ✓. Presioná Iniciar para solicitar el micrófono.',true);
+</script>
+</body>
+</html>
